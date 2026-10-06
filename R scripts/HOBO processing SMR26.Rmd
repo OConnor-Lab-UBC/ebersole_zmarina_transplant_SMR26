@@ -111,6 +111,10 @@ summary_table <- SMR26_hobo_daily |>
     se_Mean_temp = sd(Temp_mean, na.rm = TRUE) / sqrt(n),
     Mean_max_daily_temp = mean(Temp_max),
     se_Mean_max_daily_temp = sd(Temp_max, na.rm = TRUE) / sqrt(n),
+    Mean_daily_light = mean(Light_mean, na.rm = TRUE),
+    se_Mean_light = sd(Light_mean, na.rm = TRUE) / sqrt(n),
+    Mean_max_daily_light = mean(Light_max),
+    se_Mean_max_daily_light = sd(Light_max, na.rm = TRUE) / sqrt(n),
     .groups = "drop"
   )
 

@@ -1,0 +1,85 @@
+---
+title: "Transplant growth SMR26"
+author: "Alexi Ebersole"
+date: "2026-10-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(tidyverse)
+library(emmeans)
+```
+
+```{r}
+tp_growth <- read_csv(here("raw data", "plants_field", "TP_RGR_JB_SMR26.csv"))
+tp_growth <- tp_growth |>
+  mutate(
+    b1_full_cm_unbroken = ifelse(b1_broken == "y", NA, b1_full_cm),
+    b2_full_cm_unbroken = ifelse(b2_broken == "y", NA, b2_full_cm),
+    b3_full_cm_unbroken = ifelse(b3_broken == "y", NA, b3_full_cm),
+    b4_full_cm_unbroken = ifelse(b4_broken == "y", NA, b4_full_cm),
+    b5_full_cm_unbroken = ifelse(b5_broken == "y", NA, b5_full_cm),
+    b6_full_cm_unbroken = ifelse(b6_broken == "y", NA, b6_full_cm),
+    b7_full_cm_unbroken = ifelse(b7_broken == "y", NA, b7_full_cm),
+    n_unbroken_leaves = rowSums(!is.na(across(matches("^b[1-7]_full_cm_unbroken$")))),
+    sum_new_growth    = rowSums(across(matches("^b[1-7]_new_cm$")), na.rm = TRUE),
+    sum_full          = rowSums(across(matches("^b[1-7]_full_cm$")), na.rm = TRUE),
+    sum_full_unbroken = rowSums(across(matches("^b[1-7]_full_cm_unbroken$")), na.rm = TRUE),
+    body_size = log(sum_full_unbroken*leaf_width_cm),
+    RGR2 = ifelse(
+      n_unbroken_leaves >= 4,
+      (sum_new_growth / sum_full_unbroken / interval) * 100,
+      NA),
+    RGR  = sum_new_growth / sheath_length_cm / interval)
+tp_growth
+```
+```{r}
+RGR_model <- lm(RGR ~ source * outplant, data = tp_growth)
+anova(RGR_model)
+plot(RGR_model)
+shapiro.test(resid(RGR_model))
+```
+
+
+```{r}
+tp_growth <- tp_growth |> 
+  mutate(outplant = factor(outplant, levels = c("VC11_00", "VC11_01", "hist")))
+
+RGR_summary_df <- tp_growth |> 
+  group_by(source, outplant)  |> 
+  summarise(
+    mean_RGR = mean(RGR, na.rm = TRUE),
+    se_RGR = sd(RGR, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+```
+```{r}
+RGRplot <- ggplot(RGR_summary_df, aes(x = outplant, y = mean_RGR, color = source, group = source)) +
+  geom_line(position = position_dodge(width = 0.1), linewidth = 0.8) +
+  geom_point(position = position_dodge(width = 0.1), size = 3) +
+  geom_errorbar(
+    aes(ymin = mean_RGR - se_RGR, ymax = mean_RGR + se_RGR),
+    width = 0.1,
+    position = position_dodge(width = 0.1)
+  ) +
+  labs(
+    x = NULL,
+    y = expression("Relative Growth (cm d"^-1*")"),
+    color = "Source"
+  ) +
+  scale_color_manual(
+    values = c(
+      "VC11_00" = "#009999",
+      "VC11_01" = "#ff3300"))+
+  theme_classic()+
+  annotate("text", x = -Inf, y = Inf, hjust = 0, vjust = 1.3, 
+           label ="   Source, p < 0.01\n   Outplant, p < 0.001\n   Source:Outplant, p = 0.93",
+           size = 3, lineheight = 0.9)
+RGRplot
+```
+
