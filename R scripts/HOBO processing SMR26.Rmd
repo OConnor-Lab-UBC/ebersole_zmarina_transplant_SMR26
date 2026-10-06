@@ -1,0 +1,153 @@
+---
+title: "HOBO_transplant SMR26"
+author: "Alexi Ebersole"
+date: "2026-10-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(dplyr)
+library(readr)
+library(lubridate)
+library(purrr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+```
+
+```{r}
+#batch read in raw HOBO files. Added column to dataframe for 2 HOBO replicates per site
+SMR26_hobo_files <- list.files(
+  here("raw data", "HOBO"),
+  pattern = "\\.csv$", full.names = TRUE
+)
+read_hobo <- function(path) {
+  df <- read_csv(path, locale = locale(encoding = "cp1252"),
+                 show_col_types = FALSE)
+  fname <- basename(path)
+  df |> 
+    rename(
+      index = `#`,
+      datetime_raw = `Date-Time (EDT)`,
+      Temp_C = starts_with("Temperature"),
+      Light_lux = starts_with("Light")
+    ) |> 
+    mutate(
+      Site        = str_remove(fname, "_[0-9]+\\.csv$"),
+      Logger_rep  = str_extract(fname, "(?<=_)[0-9]+(?=\\.csv$)"),
+      DateTime    = mdy_hms(datetime_raw, tz = "America/New_York")  # "EDT" in the header
+    ) |> 
+    select(Site, Logger_rep, DateTime, Temp_C, Light_lux)
+}
+ 
+SMR26_hobo_raw <- map_dfr(SMR26_hobo_files, read_hobo)
+```
+```{r}
+#double checking interval and deployment window
+SMR26_hobo_raw |> 
+  arrange(Site, Logger_rep, DateTime) |> 
+  group_by(Site, Logger_rep) |> 
+  summarise(interval = names(sort(table(diff(DateTime)), decreasing = TRUE))[1],
+            n = n(), .groups = "drop")
+SMR26_hobo_raw |> 
+  group_by(Site, Logger_rep) |> 
+  summarise(start = min(DateTime), end = max(DateTime), .groups = "drop") |> 
+  arrange(Site, Logger_rep)
+```
+```{r}
+#trimming data to fit deployment window
+trim_start <- ymd_hms("2026-06-23 20:00:00", tz = "America/New_York")  
+trim_end   <- ymd_hms("2026-08-05 11:00:00", tz = "America/New_York") 
+ 
+SMR26_hobo_trimmed <- SMR26_hobo_raw  |> 
+  filter(DateTime >= trim_start, DateTime <= trim_end)
+```
+```{r}
+SMR26_hobo_by_logger <- SMR26_hobo_trimmed |> 
+  mutate(Date = as_date(DateTime)) |> 
+  group_by(Site, Logger_rep, Date) |> 
+  summarise(
+    n_readings = n(),
+    Temp_mean  = mean(Temp_C, na.rm = TRUE),
+    Temp_min   = min(Temp_C, na.rm = TRUE),
+    Temp_max   = max(Temp_C, na.rm = TRUE),
+    Light_mean = mean(Light_lux, na.rm = TRUE),
+    Light_max  = max(Light_lux, na.rm = TRUE),
+    hours_lit  = sum(Light_lux > 10, na.rm = TRUE) * 15 / 60,
+    .groups = "drop"
+  )
+ 
+# Check the two replicates roughly agree before trusting the
+# average - a big day-to-day gap between them could mean one
+# logger is shaded, buried, or fouled differently from its pair.
+
+SMR26_hobo_by_logger |> 
+  select(Site, Logger_rep, Date, Temp_mean) |> 
+  tidyr::pivot_wider(names_from = Logger_rep, values_from = Temp_mean, names_prefix = "Temp_rep") |> 
+  mutate(diff = abs(Temp_rep1 - Temp_rep2)) |> 
+  arrange(desc(diff))
+ 
+SMR26_hobo_daily <- SMR26_hobo_by_logger |> 
+  group_by(Site, Date) |> 
+  summarise(
+    n_loggers  = n_distinct(Logger_rep),
+    Temp_mean  = mean(Temp_mean, na.rm = TRUE),
+    Temp_min   = min(Temp_min, na.rm = TRUE),
+    Temp_max   = max(Temp_max, na.rm = TRUE),
+    Light_mean = mean(Light_mean, na.rm = TRUE),
+    Light_max  = max(Light_max, na.rm = TRUE),
+    hours_lit  = mean(hours_lit, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+```{r}
+summary_table <- SMR26_hobo_daily |> 
+  group_by(Site) |> 
+  summarise(
+    n = n(),
+    Mean_daily_temp = mean(Temp_mean, na.rm = TRUE),
+    se_Mean_temp = sd(Temp_mean, na.rm = TRUE) / sqrt(n),
+    Mean_max_daily_temp = mean(Temp_max),
+    se_Mean_max_daily_temp = sd(Temp_max, na.rm = TRUE) / sqrt(n),
+    .groups = "drop"
+  )
+
+summary_table
+```
+
+```{r}
+Mean_temp <- ggplot(
+  data = SMR26_hobo_daily,
+  aes(x = Date,
+      y = Temp_mean,
+      color = Site)) +
+  geom_line(alpha = 0.8,
+            linewidth = 0.8) +
+  theme_classic()
+Mean_temp
+```
+```{r}
+Mean_light <- ggplot(
+  data = SMR26_hobo_daily,
+  aes(x = Date,
+      y = Light_mean,
+      color = Site)) +
+  geom_line(alpha = 0.8,
+            linewidth = 0.8) +
+  theme_classic()
+Mean_light
+```
+```{r}
+Max_temp <- ggplot(
+  data = SMR26_hobo_daily,
+  aes(x = Date,
+      y = Temp_max,
+      color = Site)) +
+  geom_line(alpha = 0.8,
+            linewidth = 0.8) +
+  theme_classic()
+Max_temp
+```
+
