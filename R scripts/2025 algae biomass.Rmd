@@ -22,8 +22,10 @@ library(readr)
 ```{r load data}
 biom2025 <- read_csv(here("raw data", "algae", "biomass_density_COMPLETE_2025.csv"))
 coords2025 <- read_csv(here("raw data", "algae", "logbooks2025.csv"), locale = locale(encoding = "latin1"))
+sample_sites <- read_csv(here("raw data", "algae", "sample_site_summary.csv"))
 head(biom2025)
 head(coords2025)
+head(sample_sites)
 ```
 ```{r trim coords}
 coords_small <- coords2025 |> 
@@ -283,23 +285,87 @@ ggsave(
   path = "C:/Users/alexi/OneDrive/Documents/SMR26 field data/Plots")
 ```
 ```{r Site Map}
-install.packages(c("tidyverse", "sf", "rnaturalearth", "rnaturalearthdata", "ggspatial"))
+install.packages(c("tidyverse", "sf", "rnaturalearth", "rnaturalearthdata", "ggspatial", "rnaturalearthhires", repos = "https://ropensci.r-universe.dev"))
 library(tidyverse)
 library(sf)
 library(rnaturalearth)
 library(rnaturalearthdata)
 library(ggspatial)
+library(patchwork)
 
-country_map <- ne_countries(scale = "medium", country = "Canada", returnclass = "sf")
-sites <- st_as_sf(quadrat_biom2025, coords = c("Longitude", "Latitude"), crs = 4326)
+land <- ne_download(scale = 10, type = "land", category = "physical", returnclass = "sf")
+sites <- st_as_sf(sample_sites, coords = c("Longitude", "Latitude"), crs = 4326)
 
-main_map <- ggplot() +
-  # Plot the base country/region layer
-  geom_sf(data = country_map, fill = "gray95", color = "gray50", linewidth = 0.4) +
-  
-  # Plot your study sites
-  geom_sf(data = sites, aes(color = Site), size = 3.5, shape = 19) +
-  coord_sf(xlim = c(-83, -78), ylim =c(50, 57), expand = FALSE)
-main_map
+bb <- st_bbox(c(xmin = -82, xmax = -78, ymin = 50.5, ymax = 55), crs = st_crs(4326))
+land_crop <- st_crop(st_make_valid(land), bb)
+
+study_box <- st_as_sfc(st_bbox(
+  c(xmin = -82, xmax = -78, ymin = 51.5, ymax = 55),
+  crs = st_crs(4326)
+))
+
+land_overview <- ne_countries(scale = "medium", continent = "North America",
+                              returnclass = "sf")
+
+site_key <- sites |>
+  mutate(Lat = st_coordinates(geometry)[, 2],
+         Lon = st_coordinates(geometry)[, 1]) |>
+  st_drop_geometry() |>
+  distinct(Site, Lat, Lon) |>
+  arrange(desc(Lat)) |>
+  mutate(num = row_number())
+sites_num <- sites |> left_join(select(site_key, Site, num), by = "Site")
+```
+
+```{r}
+inset_map <- ggplot() +
+  geom_sf(data = land_overview, fill = "white", color = "gray50", linewidth = 0.2) +
+  geom_sf(data = study_box, fill = NA, color = "red", linewidth = 0.4) +
+  coord_sf(xlim = c(-95, -60), ylim = c(42, 65), expand = FALSE) +
+  theme_void() +
+  theme(panel.border = element_rect(fill = NA, color = "black", linewidth = 0.8))
+
+
+site_map <- ggplot() +
+  geom_sf(data = land_crop, fill = "white", color = "black", linewidth = 0.4) +
+  geom_sf(data = sites, aes(color = `Survey data`, shape = `Survey data`), size = 3)+
+  scale_shape_manual(values = c(16, 15, 17)) +
+  coord_sf(xlim = c(-82, -78), ylim =c(51.5, 55), expand = FALSE) +
+  scale_x_continuous(n.breaks = 3) +
+  scale_y_continuous(n.breaks = 4) +
+  annotation_scale(
+    location = "bl",              # bottom left
+    width_hint = 0.18,
+    text_cex = 0.6,
+    bar_cols = c("black", "white"),
+    line_width = 0.5
+  ) +
+  annotation_north_arrow(
+    location = "bl",              # bottom right
+    which_north = "true",
+    style = north_arrow_minimal(text_size = 12),
+    height = unit(1.2, "cm"),
+    width = unit(1.2, "cm"),
+    pad_x = unit(0.1, "cm"),
+    pad_y = unit(0.6, "cm")
+  )+
+  theme_bw()+
+  theme(legend.title = element_text(size = 9),
+        legend.text  = element_text(size = 8),
+        panel.background = element_rect(fill = "lightblue"))
+site_map
+
+final_map <- site_map +
+  inset_element(inset_map, left = 0.02, bottom = 0.7, right = 0.32, top = 1)
+final_map
+```
+
+```{r}
+ggsave(
+  "site_map.png", 
+  plot = final_map, 
+  width = 4, height = 4, 
+  units = "in", dpi = 300, 
+  path = "C:/Users/alexi/OneDrive/Documents/SMR26 field data/Plots")
 ```
 
