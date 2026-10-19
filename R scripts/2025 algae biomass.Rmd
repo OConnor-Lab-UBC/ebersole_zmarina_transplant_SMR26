@@ -1,0 +1,305 @@
+---
+title: "2025 biomass CHCRP"
+author: "Alexi Ebersole"
+date: "2026-10-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(ggpubr)
+library(scales)
+library(jpeg)
+library(grid)
+library(here)
+library(readr)
+```
+
+```{r load data}
+biom2025 <- read_csv(here("raw data", "algae", "biomass_density_COMPLETE_2025.csv"))
+coords2025 <- read_csv(here("raw data", "algae", "logbooks2025.csv"), locale = locale(encoding = "latin1"))
+head(biom2025)
+head(coords2025)
+```
+```{r trim coords}
+coords_small <- coords2025 |> 
+  mutate(
+    Site = trimws(Site),
+    Latitude = parse_number(as.character(Latitude)),
+    Longitude = parse_number(as.character(Longitude))
+  )  |> 
+  select(Site, Latitude, Longitude)  |> 
+  distinct(Site, .keep_all = TRUE)
+```
+
+```{r modify data frame and merge coords}
+quadrat_biom2025 <- biom2025 |> 
+  rename(
+    Bag.sample_weight = 'Bag+sample_weight',
+    Site = site)|> 
+  mutate(
+    Site    = trimws(Site),
+    biomass = pmax(Bag.sample_weight - bag_weight_g, 0)) |> 
+  left_join(coords_small, by = "Site") |> 
+  select(
+    Site, 
+    quadrat, 
+    sample_type, 
+    biomass, 
+    Latitude, 
+    Longitude) |> 
+  pivot_wider(
+    names_from = sample_type,
+    values_from = biomass) |> 
+  mutate(
+    eel_alg_ratio = case_when(
+      algae > 0                    ~ eelgrass / algae,
+      algae == 0 & eelgrass > 0    ~ Inf,
+      TRUE                         ~ NA_real_
+    ),
+    alg_eel_ratio = case_when(
+      eelgrass > 0                 ~ algae / eelgrass,
+      eelgrass == 0 & algae > 0    ~ Inf,
+      TRUE                         ~ NA_real_
+    ),
+    site          = reorder(Site, Latitude, FUN = mean, na.rm = TRUE),
+    site_position = as.numeric(site)
+  )
+```
+```{r Chisasibi fig}
+ratio_chis <- ggplot(
+  quadrat_biom2025 |> 
+    filter(is.finite(alg_eel_ratio),
+           alg_eel_ratio > 0,
+           site %in% c(
+      "CH38-00",
+      "CH38-06",
+      "CH34-00",
+      "CH33-00",
+      "CH03-00")), 
+  aes(x = site, y = alg_eel_ratio)) +
+  scale_y_log10()+
+  geom_boxplot(
+      fill = "green4",
+      alpha = 0.5)+
+  labs(
+    y = "Algae / Eelgrass",
+    x = "Site")+
+  theme_classic()+
+  theme(
+    axis.text.x = element_text(angle = 45, 
+                               hjust = 1),
+    axis.title.x = element_blank())+
+  geom_hline(
+    yintercept = 1,
+    color = "red",
+    linetype = "dashed",
+    linewidth = 0.8,
+    alpha = 0.8) +
+  annotate("text", 
+           x = 3, 
+           y = 10, 
+           label = "More algae", 
+           color = "black", 
+           fontface = "bold", 
+           size = 4,
+           alpha = 0.8) +
+  annotate("text", 
+           x = 3, 
+           y = 0.1, 
+           label = "More eelgrass", 
+           color = "black", 
+           fontface = "bold", 
+           size = 4,
+           alpha = 0.8) +
+  annotate(
+    "segment",
+    x = 3,
+    xend = 3,
+    y = 12,
+    yend = 30,
+    arrow = arrow(
+      length = unit(0.3, "cm"),
+    ),
+    color = "slategray",
+    linewidth = 1) +
+  annotate(
+    "segment",
+    x = 3,
+    xend = 3,
+    y = 0.07,
+    yend = 0.02,
+    arrow = arrow(
+      length = unit(0.3, "cm"),
+    ),
+    color = "slategray",
+    linewidth = 1)
+ratio_chis
+```
+```{r alg/eel all}
+ratio_all <- ggplot(
+  quadrat_biom2025 |> 
+    filter(is.finite(alg_eel_ratio),
+           alg_eel_ratio > 0), 
+  aes(x = site, y = alg_eel_ratio)) +
+  scale_y_log10(labels = label_number(accuracy = 1))+
+  geom_boxplot()+
+  geom_jitter(width = 0.15, height = 0, size = 2, alpha = 0.7)+
+  labs(
+    x = "South → North",
+    y = "Algae / Eelgrass (Log g dry biomass / 0.0625 m²)"
+  ) +
+  theme_classic()+
+  theme(
+    axis.text.x = element_text(angle = 45, 
+                               hjust = 1))+
+  geom_hline(
+  yintercept = 1,
+  color = "red",
+  linetype = "dashed",
+  linewidth = 0.8,
+  alpha = 0.5
+)
+ratio_all
+```
+
+```{r eel biom}
+eelgrass <- ggplot(
+  quadrat_biom2025, 
+  aes(x = site, y = eelgrass)) +
+  scale_y_log10()+
+  geom_boxplot()+
+  labs(
+    x = "Site (South → North)",
+    y = "Eelgrass Biomass (Log g / 0.0625 m²)"
+  ) +
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank()
+)
+eelgrass
+```
+```{r eel trend}
+eelgrass_trend <-
+  ggplot(
+    quadrat_biom2025,
+    aes(x = site_position,
+        y = eelgrass))+
+  geom_boxplot(
+    aes(group = site_position),
+    color = "gray80",
+    outlier.shape = NA)+
+  scale_y_log10()+
+  geom_smooth(
+    aes(group = 1),
+    method = "loess",
+    span = 0.9,
+    color = "green4",
+    fill = "green4",
+    alpha = 0.15,
+    linewidth = 1.2,
+    formula = y ~ x)+
+  scale_x_continuous(
+    breaks = sort(unique(quadrat_biom2025$site_position)),
+    labels = levels(quadrat_biom2025$site)) +
+  theme_classic()+
+  labs(
+    x = "Site (South → North)",
+    y = "Eelgrass (g/0.0625 m²)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank())
+eelgrass_trend
+```
+
+```{r algae biom}
+algae <- ggplot(
+  quadrat_biom2025, 
+  aes(x = site, y = algae)) +
+  scale_y_log10()+
+  geom_boxplot()+
+  geom_jitter(width = 0.15, height = 0, size = 2, alpha = 0.7)+
+  labs(
+    x = "Site (South → North)",
+    y = "Algae Biomass (Log g / 0.0625 m²)"
+  ) +
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)
+)
+algae
+```
+```{r}
+ch33_04_jpg <- readJPEG("C:/Users/alexi/Downloads/CH33-04_2025.JPG")
+ch38_06_jpg <- readJPEG("C:/Users/alexi/Downloads/CH38-06_2025.JPG")
+ch33_04_grob <- rasterGrob(ch33_04_jpg, interpolate = TRUE)
+ch38_06_grob <- rasterGrob(ch38_06_jpg, interpolate = TRUE)
+ch33_04_labeled <- ggarrange(
+  text_grob("CH33-04", face = "bold", size = 10),
+  ch33_04_grob,
+  ncol = 1,
+  heights = c(0.12, 1))
+ch38_06_labeled <- ggarrange(
+  text_grob("CH38-06", face = "bold", size = 10),
+  ch38_06_grob,
+  ncol = 1,
+  heights = c(0.12, 1))
+```
+
+
+```{r}
+biom2025_pres <-
+  ggarrange(eelgrass_trend, ch33_04_labeled,
+  ratio_chis, ch38_06_labeled,
+            ncol = 2,
+            nrow = 2,
+            widths = c(1.5, 1),
+            heights = c(1, 1))
+biom2025_pres
+```
+
+```{r}
+getwd()
+ggsave(
+  "ratio_chis.png", 
+  plot = ratio_chis, 
+  width = 4, height = 4, 
+  units = "in", dpi = 300, 
+  path = "C:/Users/alexi/OneDrive/Documents/SMR26 field data/Plots")
+ggsave(
+  "ratio_all.png", 
+  plot = ratio_all, 
+  width = 4, height = 4, 
+  units = "in", dpi = 300, 
+  path = "C:/Users/alexi/OneDrive/Documents/SMR26 field data/Plots")
+ggsave(
+  "biom2025_pres.png", 
+  plot = biom2025_pres, 
+  width = 9, height = 5, 
+  units = "in", dpi = 300, 
+  bg = "white",
+  path = "C:/Users/alexi/OneDrive/Documents/SMR26 field data/Plots")
+```
+```{r Site Map}
+install.packages(c("tidyverse", "sf", "rnaturalearth", "rnaturalearthdata", "ggspatial"))
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggspatial)
+
+country_map <- ne_countries(scale = "medium", country = "Canada", returnclass = "sf")
+sites <- st_as_sf(quadrat_biom2025, coords = c("Longitude", "Latitude"), crs = 4326)
+
+main_map <- ggplot() +
+  # Plot the base country/region layer
+  geom_sf(data = country_map, fill = "gray95", color = "gray50", linewidth = 0.4) +
+  
+  # Plot your study sites
+  geom_sf(data = sites, aes(color = Site), size = 3.5, shape = 19) +
+  coord_sf(xlim = c(-83, -78), ylim =c(50, 57), expand = FALSE)
+main_map
+```
+
