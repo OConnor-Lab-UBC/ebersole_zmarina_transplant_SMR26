@@ -173,7 +173,6 @@ ratio_all
 eelgrass <- ggplot(
   quadrat_biom2025, 
   aes(x = site, y = eelgrass)) +
-  scale_y_log10()+
   geom_boxplot()+
   labs(
     x = "Site (South → North)",
@@ -233,6 +232,18 @@ algae <- ggplot(
 )
 algae
 ```
+```{r}
+biom_scatter <-
+  ggplot(
+    quadrat_biom2025,
+    aes(x = algae, y = eelgrass)) +
+  geom_point()+
+  geom_smooth(method = "lm")+
+  stat_cor(label.x.npc = "left", label.y.npc = 0.8) + 
+  theme_classic()
+biom_scatter
+```
+
 ```{r}
 ch33_04_jpg <- readJPEG("C:/Users/alexi/Downloads/CH33-04_2025.JPG")
 ch38_06_jpg <- readJPEG("C:/Users/alexi/Downloads/CH38-06_2025.JPG")
