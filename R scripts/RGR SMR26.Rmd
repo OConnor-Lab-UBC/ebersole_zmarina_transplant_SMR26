@@ -58,6 +58,16 @@ RGR_summary_df <- tp_growth |>
     se_RGR = sd(RGR, na.rm = TRUE) / sqrt(n()),
     .groups = "drop"
   )
+
+RGR_summary_df <- RGR_summary_df |>
+  mutate(
+    source = recode(source,
+                    "VC11_00"   = "Coastal",
+                    "VC11_01"   = "Estuarine"),
+    outplant = recode(outplant,
+                    "VC11_00"   = "Coastal",
+                    "VC11_01"   = "Estuarine",
+                    "hist" = "Restoration site"))
 ```
 ```{r}
 RGRplot <- ggplot(RGR_summary_df, aes(x = outplant, y = mean_RGR, color = source, group = source)) +
@@ -75,8 +85,8 @@ RGRplot <- ggplot(RGR_summary_df, aes(x = outplant, y = mean_RGR, color = source
   ) +
   scale_color_manual(
     values = c(
-      "VC11_00" = "#009999",
-      "VC11_01" = "#ff3300"))+
+      "Coastal" = "#009999",
+      "Estuarine" = "#ff3300"))+
   theme_classic()+
   annotate("text", x = -Inf, y = Inf, hjust = 0, vjust = 1.3, 
            label ="   Source, p < 0.01\n   Outplant, p < 0.001\n   Source:Outplant, p = 0.93",
