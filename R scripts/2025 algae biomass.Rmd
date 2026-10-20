@@ -338,7 +338,7 @@ inset_map <- ggplot() +
 
 
 site_map <- ggplot() +
-  geom_sf(data = land_crop, fill = "white", color = "black", linewidth = 0.4) +
+  geom_sf(data = land_crop, fill = "white", color = NA, linewidth = 0.4) +
   geom_sf(data = sites, aes(color = `Survey data`, shape = `Survey data`), size = 3)+
   scale_shape_manual(values = c(16, 15, 17)) +
   coord_sf(xlim = c(-82, -78), ylim =c(51.5, 55), expand = FALSE) +

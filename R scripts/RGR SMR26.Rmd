@@ -83,4 +83,119 @@ RGRplot <- ggplot(RGR_summary_df, aes(x = outplant, y = mean_RGR, color = source
            size = 3, lineheight = 0.9)
 RGRplot
 ```
+```{r Site map}
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggspatial)
+library(ggrepel)
+library(patchwork)
+
+TP_sites <- read_csv(here("raw data", "plants_field", "site_coords.csv")) |> 
+  filter(!is.na(Latitude), !is.na(Longitude))
+
+TP_sites <- st_as_sf(TP_sites, coords = c("Longitude", "Latitude"),
+                     crs = 4326, remove = FALSE)
+
+bb_sites <- st_bbox(TP_sites)
+pad_x <- 0.012; pad_y <- 0.008
+xlim_map <- unname(c(bb_sites["xmin"] - pad_x, bb_sites["xmax"] + pad_x))
+ylim_map <- unname(c(bb_sites["ymin"] - pad_y, bb_sites["ymax"] + pad_y))
+
+dir.create(here("raw data", "spatial"), showWarnings = FALSE)
+land_zip <- here("raw data", "spatial", "land-polygons-complete-4326.zip")
+land_shp <- here("raw data", "spatial", "land-polygons-complete-4326", "land_polygons.shp")
+
+if (!file.exists(land_shp)) {
+  options(timeout = 3600)
+  download.file("https://osmdata.openstreetmap.de/download/land-polygons-complete-4326.zip",
+                land_zip, mode = "wb")
+  unzip(land_zip, exdir = here("raw data", "spatial"))
+}
+
+read_box <- st_as_sfc(st_bbox(c(xmin = xlim_map[1] - 0.1, xmax = xlim_map[2] + 0.1,
+                                ymin = ylim_map[1] - 0.1, ymax = ylim_map[2] + 0.1),
+                              crs = st_crs(4326)))
+land_hr <- st_read(land_shp, wkt_filter = st_as_text(read_box), quiet = TRUE) |>
+  st_make_valid()
+
+study_box <- st_as_sfc(bb_sites)
+
+land_overview <- ne_countries(scale = "medium", continent = "North America",
+                              returnclass = "sf")
+
+land_fix <- st_read(here("raw data", "spatial", "map_fix.kml")) |>
+  st_transform(4326) |>
+  st_make_valid()
+
+sf_use_s2(FALSE)
+
+land_all <- c(st_geometry(land_hr), st_geometry(land_fix)) |>
+  st_make_valid() |>
+  st_union() |>
+  st_sf()
+
+sf_use_s2(TRUE)
+
+TP_sites <- TP_sites |>
+  mutate(Site = recode(Site,
+    "VC11_hist" = "Restoration site",
+    "VC11_00"   = "Coastal",
+    "VC11_01"   = "Estuarine"
+  ))
+
+site_cols <- c(
+  "Coastal"     = "#009999",
+  "Estuarine"   = "#ff3300",
+  "Restoration" = "black"
+)
+```
+
+```{r}
+TP_inset_map <- ggplot() +
+  geom_sf(data = land_overview, fill = "white", color = "gray50", linewidth = 0.2) +
+  # study area is tiny at this scale, so mark it with a visible hollow square
+  geom_sf(data = st_centroid(study_box), shape = 0, size = 3, stroke = 0.9, color = "red") +
+  coord_sf(xlim = c(-88, -74), ylim = c(49, 58), expand = FALSE) +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "lightblue", color = NA),
+        panel.border     = element_rect(fill = NA, color = "black", linewidth = 0.8))
+
+TP_site_map <- ggplot() +
+  geom_sf(data = land_hr, fill = "white", color = NA, linewidth = 0.4) +
+  geom_sf(data = land_fix, fill = "white", color = NA, linewidth = 0.4) +
+  geom_sf(data = TP_sites, aes(color = Site), size = 3) +
+  scale_color_manual(values = site_cols) +
+  geom_text_repel(data = st_drop_geometry(TP_sites),
+                  aes(x = Longitude, y = Latitude, label = Site),
+                  size = 3, box.padding = 0.4, min.segment.length = 0,
+                  segment.size = 0.25, seed = 1) +
+  coord_sf(xlim = xlim_map, ylim = ylim_map, expand = FALSE) +
+  scale_x_continuous(n.breaks = 3) +
+  scale_y_continuous(n.breaks = 4) +
+  annotation_scale(location = "bl", width_hint = 0.25, text_cex = 0.6,
+                   bar_cols = c("black", "white"), line_width = 0.5) +
+  annotation_north_arrow(location = "br", which_north = "true",
+                         style = north_arrow_minimal(text_size = 12),
+                         height = unit(1.2, "cm"), width = unit(1.2, "cm"),
+                         pad_x = unit(0.3, "cm"), pad_y = unit(0.4, "cm")) +
+  theme_bw() +
+  theme(panel.background = element_rect(fill = "lightblue"),
+        panel.grid = element_blank(),
+        axis.title = element_blank(),
+        legend.position = "none")
+
+TP_final_map <- TP_site_map +
+  inset_element(TP_inset_map, left = 0.68, bottom = 0.68, right = 0.98, top = 0.98)
+TP_final_map
+```
+```{r}
+ggsave(
+  "TP_site_map.png", 
+  plot = TP_final_map, 
+  width = 4, height = 4, 
+  units = "in", dpi = 300, 
+  path = "C:/Users/alexi/OneDrive/Documents/SMR26 field data/Plots")
+```
 
