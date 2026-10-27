@@ -152,13 +152,10 @@ ratio_all <- ggplot(
   geom_boxplot()+
   geom_jitter(width = 0.15, height = 0, size = 2, alpha = 0.7)+
   labs(
-    x = "South → North",
-    y = "Algae / Eelgrass (Log g dry biomass / 0.0625 m²)"
-  ) +
+    y = "Algae / Eelgrass (Log g dry biomass / 0.0625 m²)") +
   theme_classic()+
-  theme(
-    axis.text.x = element_text(angle = 45, 
-                               hjust = 1))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank())+
   geom_hline(
   yintercept = 1,
   color = "red",
@@ -233,6 +230,35 @@ algae <- ggplot(
 algae
 ```
 ```{r}
+long_quadrat_biom <- quadrat_biom2025 |> 
+  pivot_longer(cols = c(algae, ruppia, eelgrass, fucus), 
+               names_to = "Sample_type", 
+               values_to = "Biomass")
+
+eel_alg_biom <-
+  long_quadrat_biom |> 
+  filter(Sample_type %in% c("eelgrass", "algae")) |> 
+  ggplot(
+    aes(x = site, y = Biomass, fill = Sample_type)) +
+  scale_y_log10(labels = label_number(accuracy = 1))+
+  geom_boxplot(position = position_dodge2(width = 0.75, padding = 0.2))+
+   scale_fill_manual(
+      name = NULL,              
+      values = c("eelgrass" = "green4",          
+                 "algae"    = "wheat3")) +
+  labs(y = "Biomass (Log g / 0.0625 m²)") +
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.x = element_blank(),
+        legend.position = "inside",
+        legend.position.inside = c(0.05, 0.95),    
+        legend.justification = c(0, 1),
+        legend.background = element_rect(fill = "transparent", colour = NA)
+    )
+eel_alg_biom
+```
+
+```{r}
 biom_scatter <-
   ggplot(
     quadrat_biom2025,
@@ -284,7 +310,13 @@ ggsave(
 ggsave(
   "ratio_all.png", 
   plot = ratio_all, 
-  width = 4, height = 4, 
+  width = 5, height = 4, 
+  units = "in", dpi = 300, 
+  path = "C:/Users/alexi/OneDrive/Documents/SMR26 field data/Plots")
+ggsave(
+  "alg_eel_biom.png", 
+  plot = eel_alg_biom, 
+  width = 5, height = 4, 
   units = "in", dpi = 300, 
   path = "C:/Users/alexi/OneDrive/Documents/SMR26 field data/Plots")
 ggsave(
